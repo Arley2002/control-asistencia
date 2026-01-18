@@ -3,7 +3,7 @@
 ## Requisitos
 - Node.js 18+
 - npm o pnpm
-- MySQL en `localhost` (root / 1234) y base `asoinca_control` creada con `db/schema.sql`
+- MySQL en `localhost` (root / 1234) y base `asoinca_control1` creada con `db/schema.sql`
 
 ## Estructura sugerida
 - `src/main.ts`: bootstrap NestJS
@@ -43,7 +43,7 @@
    DB_PORT=3306
    DB_USER=root
    DB_PASS=1234
-   DB_NAME=asoinca_control
+   DB_NAME=asoinca_control1
    # JWT
    JWT_SECRET=super_secreto_cambia_esto
    JWT_EXPIRES=15m

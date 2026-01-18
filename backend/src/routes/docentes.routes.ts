@@ -6,8 +6,28 @@ import { Municipio } from '../entities/Municipio';
 import { DeepPartial } from 'typeorm';
 import { Departamento } from '../entities/Departamento';
 import { Estatuto } from '../entities/Estatuto';
-import { EstadoLaboral } from '../entities/EstadoLaboral';
 import { Usuario } from '../entities/Usuario';
+import bcrypt from 'bcryptjs';
+
+const VINCULACIONES = ['docente', 'directivo_docente', 'administrativo', 'pensionado'] as const;
+const TIPOS_VINCULACION = [
+  'propiedad',
+  'provisional_definitivo',
+  'provisional_temporal',
+  'oferente',
+  'rector_propiedad',
+  'rector_encargo',
+  'coordinador_propiedad',
+  'coordinador_encargo',
+  'director_rural_propiedad',
+  'director_rural_encargo',
+  'administrativo_propiedad',
+  'administrativo_provisional',
+  'pensionado_activo',
+  'pensionado_retirado'
+] as const;
+
+const requiereEstatuto = (vinculacion: string) => vinculacion !== 'administrativo';
 
 export const docentesRouter = Router();
 
@@ -16,7 +36,7 @@ docentesRouter.get('/me', requiereAuth, requiereRol('docente', 'administrador'),
   const userId = (req as any).user?.sub;
   if (!userId) return res.status(401).json({ message: 'No autenticado' });
   const repo = AppDataSource.getRepository(Docente);
-  const docente = await repo.findOne({ where: { usuario: { id: userId } }, relations: ['usuario', 'municipio_residencia', 'municipio_residencia.departamento_rel', 'municipio_donde_labora', 'municipio_donde_labora.departamento_rel', 'estatuto', 'estado_laboral'] });
+  const docente = await repo.findOne({ where: { usuario: { id: userId } }, relations: ['usuario', 'municipio_residencia', 'municipio_residencia.departamento_rel', 'municipio_donde_labora', 'municipio_donde_labora.departamento_rel', 'estatuto'] });
   if (!docente) return res.status(404).json({ message: 'Docente no encontrado' });
   res.setHeader('Cache-Control', 'no-store');
   res.json(docente);
@@ -29,9 +49,20 @@ docentesRouter.put('/me', requiereAuth, requiereRol('docente', 'administrador'),
   const usuarioRepo = AppDataSource.getRepository(Usuario);
   const municipioRepo = AppDataSource.getRepository(Municipio);
   const estatutoRepo = AppDataSource.getRepository(Estatuto);
-  const estadoRepo = AppDataSource.getRepository(EstadoLaboral);
-  const docente = await repo.findOne({ where: { usuario: { id: userId } }, relations: ['usuario', 'municipio_residencia', 'municipio_residencia.departamento_rel', 'municipio_donde_labora', 'municipio_donde_labora.departamento_rel', 'estatuto', 'estado_laboral'] });
+  const docente = await repo.findOne({ where: { usuario: { id: userId } }, relations: ['usuario', 'municipio_residencia', 'municipio_residencia.departamento_rel', 'municipio_donde_labora', 'municipio_donde_labora.departamento_rel', 'estatuto'] });
   if (!docente) return res.status(404).json({ message: 'Docente no encontrado' });
+
+  const required = [
+    'nombres', 'apellidos', 'numero_celular', 'correo_electronico', 'fecha_nacimiento',
+    'departamento_residencia', 'direccion_residencia', 'municipio_residencia_id', 'municipio_donde_labora_id',
+    'institucion_educativa_donde_labora', 'vinculacion', 'tipo_vinculacion'
+  ];
+  const missing = required.filter((f) => req.body[f] === undefined || req.body[f] === null || `${req.body[f]}`.trim() === '');
+  if (missing.length) return res.status(400).json({ message: `Faltan campos obligatorios: ${missing.join(', ')}` });
+  if (!VINCULACIONES.includes(req.body.vinculacion)) return res.status(400).json({ message: 'Vinculación inválida' });
+  if (!TIPOS_VINCULACION.includes(req.body.tipo_vinculacion)) return res.status(400).json({ message: 'Tipo de vinculación inválido' });
+  if (requiereEstatuto(req.body.vinculacion) && !req.body.estatuto_id) return res.status(400).json({ message: 'Estatuto requerido' });
+
   const allowed: DeepPartial<Docente> = {
     nombres: req.body.nombres,
     apellidos: req.body.apellidos,
@@ -40,8 +71,16 @@ docentesRouter.put('/me', requiereAuth, requiereRol('docente', 'administrador'),
     fecha_nacimiento: req.body.fecha_nacimiento,
     departamento_residencia: req.body.departamento_residencia,
     direccion_residencia: req.body.direccion_residencia,
-    institucion_educativa_donde_labora: req.body.institucion_educativa_donde_labora
+    institucion_educativa_donde_labora: req.body.institucion_educativa_donde_labora,
+    vinculacion: req.body.vinculacion,
+    tipo_vinculacion: req.body.tipo_vinculacion
   };
+  if (req.body.vinculacion && !VINCULACIONES.includes(req.body.vinculacion)) {
+    return res.status(400).json({ message: 'Vinculación inválida' });
+  }
+  if (req.body.tipo_vinculacion && !TIPOS_VINCULACION.includes(req.body.tipo_vinculacion)) {
+    return res.status(400).json({ message: 'Tipo de vinculación inválido' });
+  }
   if (req.body.municipio_residencia_id) {
     docente.municipio_residencia = (await municipioRepo.findOneBy({ id: req.body.municipio_residencia_id })) || null;
   }
@@ -50,10 +89,6 @@ docentesRouter.put('/me', requiereAuth, requiereRol('docente', 'administrador'),
   }
   if (req.body.estatuto_id) {
     docente.estatuto = (await estatutoRepo.findOneBy({ id: req.body.estatuto_id })) || null;
-  }
-  if (req.body.estado_laboral_id) {
-    const estado = await estadoRepo.findOneBy({ id: req.body.estado_laboral_id });
-    if (estado) docente.estado_laboral = estado;
   }
   repo.merge(docente, allowed);
   try {
@@ -73,16 +108,41 @@ docentesRouter.put('/me', requiereAuth, requiereRol('docente', 'administrador'),
   }
 });
 
+// Actualizar credenciales (docente/admin)
+docentesRouter.put('/me/credentials', requiereAuth, requiereRol('docente', 'administrador'), async (req: Request, res: Response) => {
+  const userId = (req as any).user?.sub;
+  if (!userId) return res.status(401).json({ message: 'No autenticado' });
+  const { username, current_password, new_password } = req.body;
+  if (!current_password || !new_password) return res.status(400).json({ message: 'Contraseña actual y nueva son requeridas' });
+  if (new_password.length < 6) return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
+
+  const userRepo = AppDataSource.getRepository(Usuario);
+  const usuario = await userRepo.findOne({ where: { id: userId } });
+  if (!usuario) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+  const ok = await bcrypt.compare(current_password, usuario.password_hash);
+  if (!ok) return res.status(400).json({ message: 'Contraseña actual incorrecta' });
+
+  if (username && username !== usuario.username) {
+    const exists = await userRepo.findOne({ where: { username } });
+    if (exists) return res.status(400).json({ message: 'El usuario ya está en uso' });
+    usuario.username = username;
+  }
+
+  usuario.password_hash = await bcrypt.hash(new_password, 10);
+  await userRepo.save(usuario);
+  res.json({ message: 'Credenciales actualizadas' });
+});
+
 // Rutas admin
 // Catálogos para selects (docentes y admin)
 docentesRouter.get('/catalogos', requiereAuth, requiereRol('docente', 'administrador'), async (_req: Request, res: Response) => {
   const estatutoRepo = AppDataSource.getRepository(Estatuto);
-  const estadoRepo = AppDataSource.getRepository(EstadoLaboral);
   const [estatutos, estadosLaborales] = await Promise.all([
     estatutoRepo.find({ order: { nombre: 'ASC' } }),
-    estadoRepo.find({ order: { nombre: 'ASC' } })
+    Promise.resolve([])
   ]);
-  res.json({ estatutos, estadosLaborales });
+  res.json({ estatutos, estadosLaborales: [], vinculaciones: VINCULACIONES, tiposVinculacion: TIPOS_VINCULACION });
 });
 
 // Rutas admin
@@ -103,7 +163,6 @@ docentesRouter.get('/', async (req: Request, res: Response) => {
     .leftJoinAndSelect('d.municipio_donde_labora', 'ml')
     .leftJoinAndSelect('ml.departamento_rel', 'ml_dep')
     .leftJoinAndSelect('d.estatuto', 'es')
-    .leftJoinAndSelect('d.estado_laboral', 'el')
     .where('1=1')
     .orderBy('d.created_at', 'DESC');
   if (cedulaExacta) {
@@ -123,30 +182,30 @@ docentesRouter.post('/', async (req: Request, res: Response) => {
   const repo = AppDataSource.getRepository(Docente);
   const municipioRepo = AppDataSource.getRepository(Municipio);
   const estatutoRepo = AppDataSource.getRepository(Estatuto);
-  const estadoRepo = AppDataSource.getRepository(EstadoLaboral);
   const body = req.body;
   if (Array.isArray(body)) return res.status(400).json({ message: 'Solo se acepta un docente' });
 
   const required = [
-    'cedula', 'nombres', 'apellidos', 'numero_celular', 'correo_electronico', 'fecha_nacimiento', 'estatuto_id',
+    'cedula', 'nombres', 'apellidos', 'numero_celular', 'correo_electronico', 'fecha_nacimiento',
     'departamento_residencia', 'direccion_residencia', 'municipio_residencia_id', 'municipio_donde_labora_id',
-    'institucion_educativa_donde_labora', 'estado_laboral_id'
+    'institucion_educativa_donde_labora', 'vinculacion', 'tipo_vinculacion'
   ];
   const missing = required.filter((f) => body[f] === undefined || body[f] === null || `${body[f]}`.trim() === '');
   if (missing.length) return res.status(400).json({ message: `Faltan campos obligatorios: ${missing.join(', ')}` });
+  if (!VINCULACIONES.includes(body.vinculacion)) return res.status(400).json({ message: 'Vinculación inválida' });
+  if (!TIPOS_VINCULACION.includes(body.tipo_vinculacion)) return res.status(400).json({ message: 'Tipo de vinculación inválido' });
+  if (requiereEstatuto(body.vinculacion) && !body.estatuto_id) return res.status(400).json({ message: 'Estatuto requerido' });
   const departamentoRepo = AppDataSource.getRepository(Departamento);
   const departamentoOk = await departamentoRepo.findOneBy({ nombre: body.departamento_residencia });
   if (!departamentoOk) return res.status(400).json({ message: 'Departamento de residencia inválido' });
 
-  const [municipioResidencia, municipioLabora, estatuto, estadoLaboral] = await Promise.all([
+  const [municipioResidencia, municipioLabora, estatuto] = await Promise.all([
     municipioRepo.findOneBy({ id: body.municipio_residencia_id }),
     municipioRepo.findOneBy({ id: body.municipio_donde_labora_id }),
-    estatutoRepo.findOneBy({ id: body.estatuto_id }),
-    estadoRepo.findOneBy({ id: body.estado_laboral_id })
+    body.estatuto_id ? estatutoRepo.findOneBy({ id: body.estatuto_id }) : null
   ]);
   if (!municipioResidencia || !municipioLabora) return res.status(400).json({ message: 'Municipio de residencia o donde labora inválido' });
-  if (!estatuto) return res.status(400).json({ message: 'Estatuto inválido' });
-  if (!estadoLaboral) return res.status(400).json({ message: 'Estado laboral inválido' });
+  if (requiereEstatuto(body.vinculacion) && !estatuto) return res.status(400).json({ message: 'Estatuto inválido' });
 
   const docente = repo.create({
     cedula: body.cedula,
@@ -155,13 +214,14 @@ docentesRouter.post('/', async (req: Request, res: Response) => {
     numero_celular: body.numero_celular,
     correo_electronico: body.correo_electronico,
     fecha_nacimiento: body.fecha_nacimiento,
-    estatuto,
+    estatuto: estatuto || null,
     departamento_residencia: body.departamento_residencia,
     municipio_residencia: municipioResidencia,
     direccion_residencia: body.direccion_residencia,
     municipio_donde_labora: municipioLabora,
     institucion_educativa_donde_labora: body.institucion_educativa_donde_labora,
-    estado_laboral: estadoLaboral,
+    vinculacion: body.vinculacion,
+    tipo_vinculacion: body.tipo_vinculacion,
     estado: body.estado || 'activo'
   } as DeepPartial<Docente>);
 
@@ -175,7 +235,7 @@ docentesRouter.post('/', async (req: Request, res: Response) => {
 
 docentesRouter.get('/:id', async (req: Request, res: Response) => {
   const repo = AppDataSource.getRepository(Docente);
-  const docente = await repo.findOne({ where: { id: Number(req.params.id) }, relations: ['municipio_residencia', 'municipio_residencia.departamento_rel', 'municipio_donde_labora', 'municipio_donde_labora.departamento_rel', 'estatuto', 'estado_laboral'] });
+  const docente = await repo.findOne({ where: { id: Number(req.params.id) }, relations: ['municipio_residencia', 'municipio_residencia.departamento_rel', 'municipio_donde_labora', 'municipio_donde_labora.departamento_rel', 'estatuto'] });
   if (!docente) return res.status(404).json({ message: 'No encontrado' });
   res.json(docente);
 });
@@ -184,26 +244,25 @@ docentesRouter.put('/:id', async (req: Request, res: Response) => {
   const repo = AppDataSource.getRepository(Docente);
   const municipioRepo = AppDataSource.getRepository(Municipio);
   const estatutoRepo = AppDataSource.getRepository(Estatuto);
-  const estadoRepo = AppDataSource.getRepository(EstadoLaboral);
-  const docente = await repo.findOne({ where: { id: Number(req.params.id) }, relations: ['municipio_residencia', 'municipio_donde_labora', 'estatuto', 'estado_laboral'] });
+  const docente = await repo.findOne({ where: { id: Number(req.params.id) }, relations: ['municipio_residencia', 'municipio_donde_labora', 'estatuto'] });
   if (!docente) return res.status(404).json({ message: 'No encontrado' });
 
   const body = req.body;
   const required = [
-    'cedula', 'nombres', 'apellidos', 'numero_celular', 'correo_electronico', 'fecha_nacimiento', 'estatuto_id',
+    'cedula', 'nombres', 'apellidos', 'numero_celular', 'correo_electronico', 'fecha_nacimiento',
     'departamento_residencia', 'direccion_residencia', 'municipio_residencia_id', 'municipio_donde_labora_id',
-    'institucion_educativa_donde_labora', 'estado_laboral_id'
+    'institucion_educativa_donde_labora', 'vinculacion', 'tipo_vinculacion'
   ];
   const missing = required.filter((f) => body[f] === undefined || body[f] === null || `${body[f]}`.trim() === '');
   if (missing.length) return res.status(400).json({ message: `Faltan campos obligatorios: ${missing.join(', ')}` });
+  if (!VINCULACIONES.includes(body.vinculacion)) return res.status(400).json({ message: 'Vinculación inválida' });
+  if (!TIPOS_VINCULACION.includes(body.tipo_vinculacion)) return res.status(400).json({ message: 'Tipo de vinculación inválido' });
+  if (requiereEstatuto(body.vinculacion) && !body.estatuto_id) return res.status(400).json({ message: 'Estatuto requerido' });
   const departamentoRepo = AppDataSource.getRepository(Departamento);
   const departamentoOk = await departamentoRepo.findOneBy({ nombre: body.departamento_residencia });
   if (!departamentoOk) return res.status(400).json({ message: 'Departamento de residencia inválido' });
-  const estatuto = await estatutoRepo.findOneBy({ id: body.estatuto_id });
-  if (!estatuto) return res.status(400).json({ message: 'Estatuto inválido' });
-  const estadoLaboral = await estadoRepo.findOneBy({ id: body.estado_laboral_id });
-  if (!estadoLaboral) return res.status(400).json({ message: 'Estado laboral inválido' });
-
+  const estatuto = body.estatuto_id ? await estatutoRepo.findOneBy({ id: body.estatuto_id }) : null;
+  if (requiereEstatuto(body.vinculacion) && !estatuto) return res.status(400).json({ message: 'Estatuto inválido' });
   const municipioResidencia = await municipioRepo.findOneBy({ id: body.municipio_residencia_id });
   const municipioLabora = await municipioRepo.findOneBy({ id: body.municipio_donde_labora_id });
   if (!municipioResidencia || !municipioLabora) return res.status(400).json({ message: 'Municipio de residencia o donde labora inválido' });
@@ -215,13 +274,14 @@ docentesRouter.put('/:id', async (req: Request, res: Response) => {
     numero_celular: body.numero_celular,
     correo_electronico: body.correo_electronico,
     fecha_nacimiento: body.fecha_nacimiento,
-    estatuto,
+    estatuto: estatuto || null,
     departamento_residencia: body.departamento_residencia,
     municipio_residencia: municipioResidencia,
     direccion_residencia: body.direccion_residencia,
     municipio_donde_labora: municipioLabora,
     institucion_educativa_donde_labora: body.institucion_educativa_donde_labora,
-    estado_laboral: estadoLaboral,
+    vinculacion: body.vinculacion,
+    tipo_vinculacion: body.tipo_vinculacion,
     estado: body.estado || docente.estado
   } as DeepPartial<Docente>);
   try {

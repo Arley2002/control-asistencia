@@ -10,10 +10,11 @@ export const usuariosRouter = Router();
 
 usuariosRouter.use(requiereAuth, requiereRol('administrador'));
 
-usuariosRouter.get('/', async (_req, res) => {
+usuariosRouter.get('/', async (req, res) => {
   const userRepo = AppDataSource.getRepository(Usuario);
   const docenteRepo = AppDataSource.getRepository(Docente);
 
+  // Sincroniza nombres/correos con docentes (ligero, tabla pequeña)
   const docentes = await docenteRepo.find({ relations: ['usuario'] });
   const docenteByUser = new Map<number, Docente>();
   const docenteByCedula = new Map<string, Docente>();
@@ -22,11 +23,11 @@ usuariosRouter.get('/', async (_req, res) => {
     if (d.cedula) docenteByCedula.set(d.cedula, d);
   }
 
-  const data = await userRepo.find({ relations: ['rol'] });
+  const allUsers = await userRepo.find({ relations: ['rol'] });
   const updates: Usuario[] = [];
   const docentesToLink: Docente[] = [];
 
-  for (const u of data) {
+  for (const u of allUsers) {
     let d = docenteByUser.get(u.id);
     if (!d && docenteByCedula.has(u.username)) {
       d = docenteByCedula.get(u.username) as Docente;
@@ -59,7 +60,36 @@ usuariosRouter.get('/', async (_req, res) => {
     await userRepo.save(updates);
   }
 
-  res.json(data);
+  // Filtros y paginación
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const limit = Math.min(Number(req.query.limit) || 20, 100);
+  const search = (req.query.search as string) || '';
+  const rolFilter = (req.query.rol as string) || ''; // puede ser id o nombre
+
+  const qb = userRepo.createQueryBuilder('u')
+    .leftJoinAndSelect('u.rol', 'r')
+    .orderBy('u.id', 'DESC');
+
+  if (search) {
+    qb.andWhere('(u.nombre LIKE :s OR u.username LIKE :s OR u.correo LIKE :s)', { s: `%${search}%` });
+  }
+
+  if (rolFilter) {
+    const roles: number[] = [];
+    const parts = rolFilter.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+    for (const p of parts) {
+      if (p === 'administrador') roles.push(1);
+      else if (p === 'secretario') roles.push(2);
+      else if (!Number.isNaN(Number(p))) roles.push(Number(p));
+    }
+    if (roles.length) {
+      qb.andWhere('r.id IN (:...roles)', { roles });
+    }
+  }
+
+  const [data, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ data, total, page, limit, totalPages: Math.ceil(total / limit) });
 });
 
 usuariosRouter.post('/', async (req, res) => {

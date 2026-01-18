@@ -1,6 +1,6 @@
 # ASOINCA - Esquema de base de datos
 
-Este repositorio contiene el SQL inicial para crear la base de datos **asoinca_control** en MySQL.
+Este repositorio contiene el SQL inicial para crear la base de datos **asoinca_control1** en MySQL.
 
 ## Requisitos
 - MySQL 8.x

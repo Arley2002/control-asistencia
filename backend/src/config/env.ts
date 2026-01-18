@@ -9,7 +9,7 @@ export const env = {
     port: Number(process.env.DB_PORT) || 3306,
     user: process.env.DB_USER || 'root',
     pass: process.env.DB_PASS || '1234',
-    name: process.env.DB_NAME || 'asoinca_control'
+    name: process.env.DB_NAME || 'asoinca_control1'
   },
   jwt: {
     secret: process.env.JWT_SECRET || 'cambia_este_valor',

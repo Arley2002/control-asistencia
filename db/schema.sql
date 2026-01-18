@@ -1,14 +1,14 @@
 -- ASOINCA Control de Asistencia - Esquema inicial
--- Base de datos: asoinca_control
+-- Base de datos: asoinca_control1
 -- Ejecutar con: mysql -u root -p1234 < db/schema.sql
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
-CREATE DATABASE IF NOT EXISTS asoinca_control
+CREATE DATABASE IF NOT EXISTS asoinca_control1
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
-USE asoinca_control;
+USE asoinca_control1;
 
 -- Tabla de roles (semilla inicial)
 CREATE TABLE IF NOT EXISTS roles (
@@ -58,17 +58,6 @@ CREATE TABLE IF NOT EXISTS estatutos (
 INSERT IGNORE INTO estatutos (id, nombre) VALUES
   (1, '1278'), (2, '2277'), (3, '504'), (4, 'Etnoeducadores'), (5, '1345');
 
--- Catálogo de estados laborales
-CREATE TABLE IF NOT EXISTS estados_laborales (
-  id TINYINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  nombre VARCHAR(60) NOT NULL UNIQUE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
-
-INSERT IGNORE INTO estados_laborales (id, nombre) VALUES
-  (1, 'Pensionado'), (2, 'Pensionado Retirado'), (3, 'Provisional Temporal'),
-  (4, 'Provisional'), (5, 'Vacancia en propiedad');
-
 -- Catálogo de municipios (con referencia a departamento)
 CREATE TABLE IF NOT EXISTS municipios (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -96,7 +85,14 @@ CREATE TABLE IF NOT EXISTS docentes (
   direccion_residencia VARCHAR(180) NULL,
   municipio_donde_labora_id BIGINT UNSIGNED NULL,
   institucion_educativa_donde_labora VARCHAR(180) NULL,
-  estado_laboral_id TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  vinculacion ENUM('docente','directivo_docente','administrativo','pensionado') NOT NULL DEFAULT 'docente',
+  tipo_vinculacion ENUM(
+    'propiedad','provisional_definitivo','provisional_temporal','oferente',
+    'rector_propiedad','rector_encargo','coordinador_propiedad','coordinador_encargo',
+    'director_rural_propiedad','director_rural_encargo',
+    'administrativo_propiedad','administrativo_provisional',
+    'pensionado_activo','pensionado_retirado'
+  ) NOT NULL DEFAULT 'propiedad',
   usuario_id BIGINT UNSIGNED NULL,
   estado ENUM('activo','inactivo') NOT NULL DEFAULT 'activo',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -104,15 +100,13 @@ CREATE TABLE IF NOT EXISTS docentes (
   FOREIGN KEY (municipio_residencia_id) REFERENCES municipios(id),
   FOREIGN KEY (municipio_donde_labora_id) REFERENCES municipios(id),
   FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
-  FOREIGN KEY (estatuto_id) REFERENCES estatutos(id),
-  FOREIGN KEY (estado_laboral_id) REFERENCES estados_laborales(id)
+  FOREIGN KEY (estatuto_id) REFERENCES estatutos(id)
 ) ENGINE=InnoDB;
 
 CREATE INDEX idx_docentes_nombre ON docentes(apellidos, nombres);
 CREATE INDEX idx_docentes_municipio_residencia ON docentes(municipio_residencia_id);
 CREATE INDEX idx_docentes_municipio_labora ON docentes(municipio_donde_labora_id);
 CREATE INDEX idx_docentes_estatuto ON docentes(estatuto_id);
-CREATE INDEX idx_docentes_estado_laboral ON docentes(estado_laboral_id);
 
 -- Reuniones
 CREATE TABLE IF NOT EXISTS reuniones (

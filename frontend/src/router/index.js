@@ -41,7 +41,8 @@ const router = createRouter({
         { path: 'mis-asistencias', component: DocenteAsistencias },
         { path: 'perfil', component: DocentePerfil }
       ]
-    }
+    },
+    { path: '/:pathMatch(.*)*', redirect: '/login' }
   ]
 });
 

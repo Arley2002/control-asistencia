@@ -8,7 +8,29 @@
     </aside>
     <main class="content">
       <h1>Completa tus datos</h1>
-      <div class="card">
+
+      <div class="card highlight">
+        <div class="summary">
+          <div>
+            <p class="muted small">Tu perfil</p>
+            <h2 class="compact">{{ docente?.nombres ? `${docente?.apellidos || ''} ${docente?.nombres || ''}`.trim() : 'Sin nombre' }}</h2>
+            <p class="muted">
+              {{ form.vinculacion || 'Sin vinculación' }}
+              <span v-if="form.tipo_vinculacion"> · {{ form.tipo_vinculacion }}</span>
+              <span v-if="form.estatuto_id && form.vinculacion !== 'administrativo'"> · Estatuto {{ estatutoNombre }}</span>
+            </p>
+          </div>
+          <div class="summary-actions">
+            <div class="pill" :class="completo ? 'pill-success' : 'pill-warning'">
+              {{ completo ? 'Perfil completo' : 'Faltan datos' }}
+            </div>
+            <button class="button" @click="scrollToForm">Actualizar datos</button>
+          </div>
+        </div>
+        <div class="muted small" v-if="faltantes.length">Pendiente: {{ faltantes.join(', ') }}</div>
+      </div>
+
+      <div class="card" ref="formSection">
         <div class="form-header">
           <div>
             <p class="eyebrow">Perfil docente</p>
@@ -49,6 +71,23 @@
               <input v-model="form.fecha_nacimiento" type="date" />
             </div>
             <div class="field">
+              <label>Vinculación</label>
+              <select v-model="form.vinculacion">
+                <option value="" disabled>Seleccione</option>
+                <option value="docente">Docente</option>
+                <option value="directivo_docente">Directivo docente</option>
+                <option value="administrativo">Administrativo</option>
+                <option value="pensionado">Pensionado</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Tipo de vinculación</label>
+              <select v-model="form.tipo_vinculacion">
+                <option value="" disabled>Seleccione</option>
+                <option v-for="t in tipoVinculacionActual" :key="t.value" :value="t.value">{{ t.label }}</option>
+              </select>
+            </div>
+            <div class="field" v-if="form.vinculacion !== 'administrativo'">
               <label>Estatuto</label>
               <select v-model="form.estatuto_id">
                 <option value="" disabled>Seleccione</option>
@@ -86,29 +125,22 @@
           <h3>Datos laborales</h3>
           <div class="form-grid">
             <div class="field">
-              <label>Departamento donde labora</label>
+              <label>{{ labelDepartamentoLabora }}</label>
               <select v-model="departamentoLabora">
                 <option value="" disabled>Seleccione</option>
                 <option v-for="d in departamentos" :key="d" :value="d">{{ d }}</option>
               </select>
             </div>
             <div class="field">
-              <label>Municipio donde labora</label>
+              <label>{{ labelMunicipioLabora }}</label>
               <select v-model="form.municipio_donde_labora_id" :disabled="!departamentoLabora">
                 <option value="" disabled>Seleccione</option>
                 <option v-for="m in municipiosLabora" :key="m.id" :value="m.id">{{ m.nombre }}</option>
               </select>
             </div>
             <div class="field span-2">
-              <label>Institución educativa</label>
+              <label>{{ labelInstitucionLabora }}</label>
               <input v-model="form.institucion_educativa_donde_labora" />
-            </div>
-            <div class="field">
-              <label>Estado laboral</label>
-              <select v-model="form.estado_laboral_id">
-                <option value="" disabled>Seleccione</option>
-                <option v-for="el in estadosLaborales" :key="el.id" :value="el.id">{{ el.nombre }}</option>
-              </select>
             </div>
           </div>
         </section>
@@ -119,6 +151,41 @@
       </div>
       <div class="card" v-if="showReminder">
         <strong>Importante:</strong> Completa tus datos para descargar tus certificados.
+      </div>
+
+      <div class="card">
+        <div class="form-header">
+          <div>
+            <p class="eyebrow">Seguridad</p>
+            <h2>Usuario y contraseña</h2>
+            <p class="muted">Actualiza tu usuario y contraseña. Se requiere tu contraseña actual.</p>
+          </div>
+          <div class="status">
+            <span v-if="credOk" class="pill pill-success">{{ credOk }}</span>
+            <span v-if="credError" class="pill pill-error">{{ credError }}</span>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field compact">
+            <label>Usuario</label>
+            <input v-model="credentials.username" />
+          </div>
+          <div class="field compact">
+            <label>Contraseña actual</label>
+            <input v-model="credentials.current_password" type="password" />
+          </div>
+          <div class="field compact">
+            <label>Nueva contraseña</label>
+            <input v-model="credentials.new_password" type="password" />
+          </div>
+          <div class="field compact">
+            <label>Confirmar nueva contraseña</label>
+            <input v-model="credentials.confirm" type="password" />
+          </div>
+        </div>
+        <div class="actions">
+          <button class="button" @click="saveCredentials" :disabled="loadingCreds">Actualizar credenciales</button>
+        </div>
       </div>
     </main>
   </div>
@@ -137,13 +204,14 @@ const form = ref({
   numero_celular: '',
   correo_electronico: '',
   fecha_nacimiento: '',
+  vinculacion: '',
+  tipo_vinculacion: '',
   estatuto_id: '',
   departamento_residencia: '',
   municipio_residencia_id: '',
   direccion_residencia: '',
   municipio_donde_labora_id: '',
-  institucion_educativa_donde_labora: '',
-  estado_laboral_id: ''
+  institucion_educativa_donde_labora: ''
 });
 const loading = ref(false);
 const ok = ref('');
@@ -155,7 +223,43 @@ const municipiosResidencia = ref([]);
 const municipiosLabora = ref([]);
 const departamentoLabora = ref('');
 const estatutos = ref([]);
-const estadosLaborales = ref([]);
+const estatutoNombre = computed(() => {
+  const found = estatutos.value.find((e) => e.id === form.value.estatuto_id);
+  return found?.nombre || '';
+});
+const tipoVinculacionActual = ref([]);
+const esPensionadoRetirado = computed(() => form.value.vinculacion === 'pensionado' && form.value.tipo_vinculacion === 'pensionado_retirado');
+const labelDepartamentoLabora = computed(() => esPensionadoRetirado.value ? 'Departamento donde laboró' : 'Departamento donde labora');
+const labelMunicipioLabora = computed(() => esPensionadoRetirado.value ? 'Municipio donde laboró' : 'Municipio donde labora');
+const labelInstitucionLabora = computed(() => esPensionadoRetirado.value ? 'Institución educativa donde laboró' : 'Institución educativa donde labora');
+const credentials = ref({ username: '', current_password: '', new_password: '', confirm: '' });
+const credOk = ref('');
+const credError = ref('');
+const loadingCreds = ref(false);
+const tipoVinculacionMap = {
+  docente: [
+    { value: 'propiedad', label: 'Propiedad' },
+    { value: 'provisional_definitivo', label: 'Provisional definitivo' },
+    { value: 'provisional_temporal', label: 'Provisional temporal' },
+    { value: 'oferente', label: 'Oferente' }
+  ],
+  directivo_docente: [
+    { value: 'rector_propiedad', label: 'Rector en propiedad' },
+    { value: 'rector_encargo', label: 'Rector por encargo' },
+    { value: 'coordinador_propiedad', label: 'Coordinador en propiedad' },
+    { value: 'coordinador_encargo', label: 'Coordinador en encargo' },
+    { value: 'director_rural_propiedad', label: 'Director rural en propiedad' },
+    { value: 'director_rural_encargo', label: 'Director rural en encargo' }
+  ],
+  administrativo: [
+    { value: 'administrativo_propiedad', label: 'En propiedad' },
+    { value: 'administrativo_provisional', label: 'Provisional' }
+  ],
+  pensionado: [
+    { value: 'pensionado_activo', label: 'Activo' },
+    { value: 'pensionado_retirado', label: 'Retirado' }
+  ]
+};
 
 const showReminder = computed(() => {
   return (
@@ -166,14 +270,39 @@ const showReminder = computed(() => {
     !docente.value.correo_electronico ||
     !docente.value.municipio_residencia ||
     !docente.value.municipio_donde_labora ||
-    !docente.value.estatuto ||
-    !docente.value.estado_laboral
+    (docente.value.vinculacion !== 'administrativo' && !docente.value.estatuto)
   );
 });
 
 const logout = () => {
   auth.logout();
   router.push('/login');
+};
+
+const faltantes = computed(() => {
+  const req = [
+    ['nombres', 'Nombres'],
+    ['apellidos', 'Apellidos'],
+    ['numero_celular', 'Celular'],
+    ['correo_electronico', 'Correo'],
+    ['vinculacion', 'Vinculación'],
+    ['tipo_vinculacion', 'Tipo de vinculación'],
+    ['departamento_residencia', 'Depto. residencia'],
+    ['municipio_residencia_id', 'Municipio residencia'],
+    ['direccion_residencia', 'Dirección'],
+    ['municipio_donde_labora_id', esPensionadoRetirado.value ? 'Municipio donde laboró' : 'Municipio donde labora'],
+    ['institucion_educativa_donde_labora', esPensionadoRetirado.value ? 'Institución donde laboró' : 'Institución donde labora']
+  ];
+  const missing = req.filter(([key]) => !form.value[key]).map(([, label]) => label);
+  if (form.value.vinculacion !== 'administrativo' && !form.value.estatuto_id) missing.push('Estatuto');
+  return missing;
+});
+
+const completo = computed(() => faltantes.value.length === 0);
+
+const formSection = ref(null);
+const scrollToForm = () => {
+  formSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 const loadDepartamentos = async () => {
@@ -184,7 +313,6 @@ const loadDepartamentos = async () => {
 const loadCatalogos = async () => {
   const { data } = await api.get('/docentes/catalogos');
   estatutos.value = data.estatutos || [];
-  estadosLaborales.value = data.estadosLaborales || [];
 };
 
 const loadMunicipiosResidencia = async () => {
@@ -218,19 +346,52 @@ const load = async () => {
       numero_celular: data.numero_celular || '',
       correo_electronico: data.correo_electronico || '',
       fecha_nacimiento: data.fecha_nacimiento || '',
+      vinculacion: data.vinculacion || '',
+      tipo_vinculacion: data.tipo_vinculacion || '',
       estatuto_id: data.estatuto?.id || '',
       departamento_residencia: data.municipio_residencia?.departamento_rel?.nombre || data.departamento_residencia || '',
       municipio_residencia_id: data.municipio_residencia?.id || '',
       direccion_residencia: data.direccion_residencia || '',
       municipio_donde_labora_id: data.municipio_donde_labora?.id || '',
-      institucion_educativa_donde_labora: data.institucion_educativa_donde_labora || '',
-      estado_laboral_id: data.estado_laboral?.id || ''
+      institucion_educativa_donde_labora: data.institucion_educativa_donde_labora || ''
     };
+    credentials.value.username = data.usuario?.username || '';
     departamentoLabora.value = data.municipio_donde_labora?.departamento_rel?.nombre || '';
+    tipoVinculacionActual.value = tipoVinculacionMap[form.value.vinculacion] || [];
     if (form.value.departamento_residencia) await loadMunicipiosResidencia();
     if (departamentoLabora.value) await loadMunicipiosLabora();
   } catch (e) {
     error.value = e.response?.data?.message || 'No se pudo cargar tus datos';
+  }
+};
+
+const saveCredentials = async () => {
+  credError.value = '';
+  credOk.value = '';
+  if (!credentials.value.current_password || !credentials.value.new_password || !credentials.value.confirm) {
+    credError.value = 'Completa las contraseñas';
+    return;
+  }
+  if (credentials.value.new_password !== credentials.value.confirm) {
+    credError.value = 'Las contraseñas no coinciden';
+    return;
+  }
+  loadingCreds.value = true;
+  try {
+    const payload = {
+      username: credentials.value.username,
+      current_password: credentials.value.current_password,
+      new_password: credentials.value.new_password
+    };
+    const { data } = await api.put('/docentes/me/credentials', payload);
+    credOk.value = data?.message || 'Credenciales actualizadas';
+    credentials.value.current_password = '';
+    credentials.value.new_password = '';
+    credentials.value.confirm = '';
+  } catch (e) {
+    credError.value = e.response?.data?.message || 'No se pudieron actualizar las credenciales';
+  } finally {
+    loadingCreds.value = false;
   }
 };
 
@@ -241,13 +402,14 @@ const save = async () => {
       !form.value.apellidos ||
       !form.value.numero_celular ||
       !form.value.correo_electronico ||
-      !form.value.estatuto_id ||
+      !form.value.vinculacion ||
+      !form.value.tipo_vinculacion ||
+      (form.value.vinculacion !== 'administrativo' && !form.value.estatuto_id) ||
       !form.value.departamento_residencia ||
       !form.value.municipio_residencia_id ||
       !form.value.direccion_residencia ||
       !form.value.municipio_donde_labora_id ||
-      !form.value.institucion_educativa_donde_labora ||
-      !form.value.estado_laboral_id) {
+      !form.value.institucion_educativa_donde_labora) {
     error.value = 'Por favor completa todos los campos obligatorios';
     return;
   }
@@ -267,6 +429,18 @@ watch(
   () => form.value.departamento_residencia,
   () => {
     loadMunicipiosResidencia();
+  }
+);
+
+watch(
+  () => form.value.vinculacion,
+  (v) => {
+    tipoVinculacionActual.value = tipoVinculacionMap[v] || [];
+    const first = tipoVinculacionActual.value[0]?.value || '';
+    form.value.tipo_vinculacion = first;
+    if (v === 'administrativo') {
+      form.value.estatuto_id = '';
+    }
   }
 );
 
@@ -328,6 +502,12 @@ onMounted(async () => {
   color: #991b1b;
   background: #fef2f2;
   border-color: #fecaca;
+}
+
+.pill-warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fcd34d;
 }
 
 .section {
@@ -398,6 +578,33 @@ onMounted(async () => {
   color: #6b7280;
 }
 
+.muted.small {
+  font-size: 0.9rem;
+}
+
+.card.highlight {
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(120deg, #f9fafb 0%, #eef2ff 100%);
+}
+
+.summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.summary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-end;
+}
+
+.summary h2.compact {
+  margin: 0.1rem 0;
+}
+
 @media (max-width: 900px) {
   .form-grid {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -406,6 +613,15 @@ onMounted(async () => {
   .field.compact input,
   .field.compact select {
     max-width: 100%;
+  }
+
+  .summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .summary-actions {
+    align-items: flex-start;
   }
 }
 

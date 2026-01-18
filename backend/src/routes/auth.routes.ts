@@ -81,3 +81,5 @@ authRouter.post('/refresh', (req, res) => {
     res.status(401).json({ message: 'Refresh inválido' });
   }
 });
+
+// Reset de contraseña deshabilitado

@@ -2,7 +2,6 @@ import { Column, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn
 import { Municipio } from './Municipio';
 import { Usuario } from './Usuario';
 import { Estatuto } from './Estatuto';
-import { EstadoLaboral } from './EstadoLaboral';
 
 @Entity({ name: 'docentes' })
 export class Docente {
@@ -48,9 +47,48 @@ export class Docente {
   @Column({ type: 'varchar', length: 180, nullable: true })
   institucion_educativa_donde_labora!: string | null;
 
-  @ManyToOne(() => EstadoLaboral, { nullable: false })
-  @JoinColumn({ name: 'estado_laboral_id' })
-  estado_laboral!: EstadoLaboral;
+  @Column({
+    type: 'enum',
+    enum: ['docente', 'directivo_docente', 'administrativo', 'pensionado'],
+    default: 'docente'
+  })
+  vinculacion!: 'docente' | 'directivo_docente' | 'administrativo' | 'pensionado';
+
+  @Column({
+    type: 'enum',
+    enum: [
+      'propiedad',
+      'provisional_definitivo',
+      'provisional_temporal',
+      'oferente',
+      'rector_propiedad',
+      'rector_encargo',
+      'coordinador_propiedad',
+      'coordinador_encargo',
+      'director_rural_propiedad',
+      'director_rural_encargo',
+      'administrativo_propiedad',
+      'administrativo_provisional',
+      'pensionado_activo',
+      'pensionado_retirado'
+    ],
+    default: 'propiedad'
+  })
+  tipo_vinculacion!:
+    | 'propiedad'
+    | 'provisional_definitivo'
+    | 'provisional_temporal'
+    | 'oferente'
+    | 'rector_propiedad'
+    | 'rector_encargo'
+    | 'coordinador_propiedad'
+    | 'coordinador_encargo'
+    | 'director_rural_propiedad'
+    | 'director_rural_encargo'
+    | 'administrativo_propiedad'
+    | 'administrativo_provisional'
+    | 'pensionado_activo'
+    | 'pensionado_retirado';
 
   @OneToOne(() => Usuario, { nullable: true })
   @JoinColumn({ name: 'usuario_id' })
