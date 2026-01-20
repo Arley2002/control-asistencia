@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS usuarios (
   FOREIGN KEY (rol_id) REFERENCES roles(id)
 ) ENGINE=InnoDB;
 
+CREATE INDEX idx_usuarios_username ON usuarios(username);
+CREATE INDEX idx_usuarios_correo ON usuarios(correo);
+CREATE INDEX idx_usuarios_rol_estado ON usuarios(rol_id, estado);
+
 -- Usuario administrador inicial (password: "Admin123!")
 INSERT IGNORE INTO usuarios (id, nombre, correo, username, password_hash, rol_id, estado)
 VALUES (1, 'Administrador', 'admin@asoinca.com', 'admin', '$2a$10$MrDbKm/mz1gZGVBCYKxREOLnooJDKx.XMdag.f4uwOkNsTPCJBOVC', 1, 'activo');

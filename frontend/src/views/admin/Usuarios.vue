@@ -26,14 +26,16 @@
             <option value="1">Administradores</option>
             <option value="2">Secretarios</option>
           </select>
-          <button class="button" @click="filter">Buscar</button>
-          <button class="button" style="background:#6b7280" @click="clearFilters">Limpiar</button>
+          <button class="button" @click="filter" :disabled="loading">Buscar</button>
+          <button class="button" style="background:#6b7280" @click="clearFilters" :disabled="loading">Limpiar</button>
           <div style="margin-left:auto; display:flex; gap:0.5rem; align-items:center;">
-            <button class="button" :disabled="page<=1" @click="prev">Prev</button>
+            <button class="button" :disabled="page<=1 || loading" @click="prev">Prev</button>
             <span>Página {{ page }} de {{ totalPages }}</span>
-            <button class="button" :disabled="page*limit >= total" @click="next">Next</button>
+            <button class="button" :disabled="page*limit >= total || loading" @click="next">Next</button>
           </div>
         </div>
+        <p v-if="loading" class="muted">Cargando usuarios...</p>
+        <p v-else-if="data.length===0" class="muted">Sin resultados.</p>
         <table class="table">
           <thead>
             <tr><th>Nombre</th><th>Correo</th><th>Usuario</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
@@ -122,6 +124,7 @@ const page = ref(1);
 const limit = ref(10);
 const total = ref(0);
 const totalPages = computed(() => Math.ceil(total.value / limit.value) || 1);
+const loading = ref(false);
 const form = ref({ id: null, nombre: '', correo: '', username: '', password: '', rol_id: 2, estado: 'activo' });
 const error = ref('');
 const ok = ref('');
@@ -130,9 +133,17 @@ const router = useRouter();
 const auth = useAuthStore();
 
 const load = async () => {
-  const { data: res } = await api.get('/usuarios', { params: { search: search.value, rol: rolFiltro.value, page: page.value, limit: limit.value } });
-  data.value = res.data;
-  total.value = res.total;
+  loading.value = true;
+  try {
+    const { data: res } = await api.get('/usuarios', { params: { search: search.value, rol: rolFiltro.value, page: page.value, limit: limit.value } });
+    data.value = res.data;
+    total.value = res.total;
+  } catch (e) {
+    data.value = [];
+    total.value = 0;
+  } finally {
+    loading.value = false;
+  }
 };
 
 const filter = () => { page.value = 1; load(); };

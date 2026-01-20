@@ -9,6 +9,8 @@
       <h1>Reuniones visibles</h1>
       <div class="card">
         <p v-if="message" :style="{color: messageType==='error' ? 'red' : 'green'}">{{ message }}</p>
+        <p v-if="loading" class="muted">Cargando reuniones...</p>
+        <p v-else-if="data.length===0" class="muted">Sin reuniones visibles.</p>
         <table class="table">
           <thead>
             <tr><th>Nombre</th><th>Fecha</th><th>Acciones</th></tr>
@@ -38,12 +40,18 @@ const data = ref([]);
 const uploading = ref(false);
 const message = ref('');
 const messageType = ref('');
+const loading = ref(false);
 const router = useRouter();
 const auth = useAuthStore();
 
 const load = async () => {
-  const { data: res } = await api.get('/reuniones');
-  data.value = res.data;
+  loading.value = true;
+  try {
+    const { data: res } = await api.get('/reuniones');
+    data.value = res.data;
+  } finally {
+    loading.value = false;
+  }
 };
 
 const uploadCsv = async (reunionId, event) => {

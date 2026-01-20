@@ -23,23 +23,26 @@
         <input v-model="search" placeholder="Buscar por nombre" />
         <label>Desde <input type="date" v-model="from" /></label>
         <label>Hasta <input type="date" v-model="to" /></label>
-        <button class="button" @click="filter">Filtrar</button>
-        <button class="button" style="background:#6b7280" @click="clearFilters">Limpiar</button>
+        <button class="button" @click="filter" :disabled="loading">Filtrar</button>
+        <button class="button" style="background:#6b7280" @click="clearFilters" :disabled="loading">Limpiar</button>
         <div style="margin-left:auto; display:flex; gap:0.5rem; align-items:center;">
-          <button class="button" :disabled="page<=1" @click="prev">Prev</button>
+          <button class="button" :disabled="page<=1 || loading" @click="prev">Prev</button>
           <span>Página {{ page }} de {{ totalPages }}</span>
-          <button class="button" :disabled="page*limit >= total" @click="next">Next</button>
+          <button class="button" :disabled="page*limit >= total || loading" @click="next">Next</button>
         </div>
       </div>
       <div class="card">
+        <p v-if="loading" class="muted">Cargando reuniones...</p>
+        <p v-else-if="data.length===0" class="muted">Sin resultados.</p>
         <table class="table">
           <thead>
-            <tr><th>Nombre</th><th>Fecha</th><th>Asistentes</th><th>Visible secretario</th><th>Acciones</th></tr>
+            <tr><th>Nombre</th><th>Fecha</th><th>Convoca</th><th>Asistentes</th><th>Visible secretario</th><th>Acciones</th></tr>
           </thead>
           <tbody>
             <tr v-for="r in data" :key="r.id">
               <td>{{ r.nombre }}</td>
-              <td>{{ r.fecha }}</td>
+              <td>{{ formatDate(r.fecha) }}</td>
+              <td>{{ r.entidad_convocante }}</td>
               <td>{{ r.asistentes_count ?? 0 }}</td>
               <td>{{ r.visible_secretario ? 'Sí' : 'No' }}</td>
               <td style="display:flex; gap:0.5rem;">
@@ -120,13 +123,27 @@ const totalPages = computed(() => Math.ceil(total.value / limit.value) || 1);
 const search = ref('');
 const from = ref('');
 const to = ref('');
+const loading = ref(false);
 const router = useRouter();
 const auth = useAuthStore();
 
+const formatDate = (value) => {
+  if (!value) return '';
+  return `${value}`.split('T')[0];
+};
+
 const load = async () => {
-  const { data: res } = await api.get('/reuniones', { params: { page: page.value, limit: limit.value, search: search.value, from: from.value || undefined, to: to.value || undefined } });
-  data.value = res.data;
-  total.value = res.total;
+  loading.value = true;
+  try {
+    const { data: res } = await api.get('/reuniones', { params: { page: page.value, limit: limit.value, search: search.value, from: from.value || undefined, to: to.value || undefined } });
+    data.value = res.data;
+    total.value = res.total;
+  } catch (e) {
+    data.value = [];
+    total.value = 0;
+  } finally {
+    loading.value = false;
+  }
 };
 
 const filter = () => {

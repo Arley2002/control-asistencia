@@ -88,7 +88,7 @@
           <tbody>
             <tr v-for="c in certificados" :key="c.id">
               <td>{{ c.reunion?.nombre }}</td>
-              <td>{{ c.reunion?.fecha }}</td>
+              <td>{{ formatDate(c.reunion?.fecha) }}</td>
               <td>{{ c.reunion?.entidad_convocante }}</td>
               <td><button class="button" @click="descargarCertificado(c)">Descargar</button></td>
             </tr>
@@ -130,6 +130,11 @@ const loadingAsistencias = ref(false);
 const loadingCerts = ref(false);
 const router = useRouter();
 const auth = useAuthStore();
+
+const formatDate = (value) => {
+  if (!value) return '';
+  return `${value}`.split('T')[0];
+};
 
 const logout = () => {
   auth.logout();

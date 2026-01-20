@@ -38,7 +38,8 @@ asistenciasRouter.post('/reuniones/:id/csv', requiereAuth, requiereRol('secretar
   const reunion = await reunionRepo.findOneBy({ id: reunionId });
   if (!reunion) return res.status(404).json({ message: 'Reunión no encontrada' });
 
-  const inserted: number[] = [];
+  const rows: { cedula: string; fecha_hora: Date }[] = [];
+  const cedulasSet = new Set<string>();
   const errors: string[] = [];
 
   const parser = parse(file.buffer, {
@@ -48,15 +49,11 @@ asistenciasRouter.post('/reuniones/:id/csv', requiereAuth, requiereRol('secretar
     trim: true,
     relax_column_count: true
   });
+
   for await (const record of parser) {
     const cedula = (record.cedula || '').trim();
     if (!cedula) {
       errors.push('Fila sin cédula');
-      continue;
-    }
-    const docente = await docenteRepo.findOneBy({ cedula });
-    if (!docente) {
-      errors.push(`Cédula no existe: ${cedula}`);
       continue;
     }
     const fecha = parseFechaHoraLocal(record.fecha_hora);
@@ -64,20 +61,51 @@ asistenciasRouter.post('/reuniones/:id/csv', requiereAuth, requiereRol('secretar
       errors.push(`Fecha inválida: ${record.fecha_hora}`);
       continue;
     }
-    try {
-      const asist = asistenciaRepo.create({ reunion, docente, fecha_hora: fecha });
-      await asistenciaRepo.save(asist);
-      inserted.push(docente.id);
-    } catch (err: any) {
-      if (err.code === 'ER_DUP_ENTRY') {
-        errors.push(`Duplicado: reunion ${reunionId} docente ${docente.cedula}`);
-      } else {
-        errors.push(`Error con ${docente.cedula}: ${err.message}`);
-      }
-    }
+    rows.push({ cedula, fecha_hora: fecha });
+    cedulasSet.add(cedula);
   }
 
-  res.json({ insertados: inserted.length, errores: errors });
+  if (!rows.length) return res.status(400).json({ message: 'No se encontraron registros válidos' });
+
+  const cedulas = Array.from(cedulasSet);
+  const docentesMap = new Map<string, number>();
+  const chunkSize = 500;
+
+  for (let i = 0; i < cedulas.length; i += chunkSize) {
+    const chunk = cedulas.slice(i, i + chunkSize);
+    const docentes = await docenteRepo
+      .createQueryBuilder('d')
+      .select(['d.id', 'd.cedula'])
+      .where('d.cedula IN (:...cedulas)', { cedulas: chunk })
+      .getMany();
+    docentes.forEach((d) => docentesMap.set(d.cedula, d.id));
+  }
+
+  const values: { reunion_id: number; docente_id: number; fecha_hora: Date }[] = [];
+  for (const row of rows) {
+    const docenteId = docentesMap.get(row.cedula);
+    if (!docenteId) {
+      errors.push(`Cédula no existe: ${row.cedula}`);
+      continue;
+    }
+    values.push({ reunion_id: reunionId, docente_id: docenteId, fecha_hora: row.fecha_hora });
+  }
+
+  let inserted = 0;
+  for (let i = 0; i < values.length; i += chunkSize) {
+    const chunk = values.slice(i, i + chunkSize);
+    const result = await asistenciaRepo
+      .createQueryBuilder()
+      .insert()
+      .into('asistencias')
+      .values(chunk)
+      .orIgnore()
+      .execute();
+    const affected = typeof result.raw?.affectedRows === 'number' ? result.raw.affectedRows : result.identifiers.length;
+    inserted += affected;
+  }
+
+  res.json({ insertados: inserted, errores: errors });
 });
 
 // Listar asistencias por reunión (admin/secretario)

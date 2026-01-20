@@ -21,15 +21,17 @@
 
       <div class="card" style="display:flex;gap:0.5rem;align-items:center;">
         <input v-model="search" placeholder="Buscar por cédula/nombre" />
-        <button class="button" @click="filter">Buscar</button>
-        <button class="button" style="background:#6b7280" @click="clearFilters">Limpiar</button>
+        <button class="button" @click="filter" :disabled="loading">Buscar</button>
+        <button class="button" style="background:#6b7280" @click="clearFilters" :disabled="loading">Limpiar</button>
         <div style="margin-left:auto; display:flex; gap:0.5rem; align-items:center;">
-          <button class="button" :disabled="page<=1" @click="prev">Prev</button>
+          <button class="button" :disabled="page<=1 || loading" @click="prev">Prev</button>
           <span>Página {{ page }} de {{ totalPages }}</span>
-          <button class="button" :disabled="page*limit >= total" @click="next">Next</button>
+          <button class="button" :disabled="page*limit >= total || loading" @click="next">Next</button>
         </div>
       </div>
       <div class="card">
+        <p v-if="loading" class="muted">Cargando docentes...</p>
+        <p v-else-if="data.length===0" class="muted">Sin resultados.</p>
         <table class="table">
           <thead>
             <tr><th>Cédula</th><th>Nombre</th><th>Vinculación</th><th>Tipo</th><th>Municipio labora</th><th>Estado</th><th>Acciones</th></tr>
@@ -178,6 +180,7 @@ const page = ref(1);
 const limit = ref(10);
 const total = ref(0);
 const totalPages = computed(() => Math.ceil(total.value / limit.value) || 1);
+const loading = ref(false);
 const form = ref({
   id: null,
   cedula: '',
@@ -237,9 +240,17 @@ const router = useRouter();
 const auth = useAuthStore();
 
 const load = async () => {
-  const { data: res } = await api.get('/docentes', { params: { search: search.value, page: page.value, limit: limit.value } });
-  data.value = res.data;
-  total.value = res.total;
+  loading.value = true;
+  try {
+    const { data: res } = await api.get('/docentes', { params: { search: search.value, page: page.value, limit: limit.value } });
+    data.value = res.data;
+    total.value = res.total;
+  } catch (e) {
+    data.value = [];
+    total.value = 0;
+  } finally {
+    loading.value = false;
+  }
 };
 
 const loadDepartamentos = async () => {

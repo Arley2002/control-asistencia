@@ -4,62 +4,16 @@ import { requiereAuth, requiereRol } from '../middlewares/auth';
 import { AppDataSource } from '../config/data-source';
 import { Usuario } from '../entities/Usuario';
 import { Rol } from '../entities/Rol';
-import { Docente } from '../entities/Docente';
 
 export const usuariosRouter = Router();
+
+const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+const isPasswordStrong = (pwd: string) => PASSWORD_REGEX.test(pwd);
 
 usuariosRouter.use(requiereAuth, requiereRol('administrador'));
 
 usuariosRouter.get('/', async (req, res) => {
   const userRepo = AppDataSource.getRepository(Usuario);
-  const docenteRepo = AppDataSource.getRepository(Docente);
-
-  // Sincroniza nombres/correos con docentes (ligero, tabla pequeña)
-  const docentes = await docenteRepo.find({ relations: ['usuario'] });
-  const docenteByUser = new Map<number, Docente>();
-  const docenteByCedula = new Map<string, Docente>();
-  for (const d of docentes) {
-    if (d.usuario?.id) docenteByUser.set(d.usuario.id, d);
-    if (d.cedula) docenteByCedula.set(d.cedula, d);
-  }
-
-  const allUsers = await userRepo.find({ relations: ['rol'] });
-  const updates: Usuario[] = [];
-  const docentesToLink: Docente[] = [];
-
-  for (const u of allUsers) {
-    let d = docenteByUser.get(u.id);
-    if (!d && docenteByCedula.has(u.username)) {
-      d = docenteByCedula.get(u.username) as Docente;
-      if (d && !d.usuario) {
-        d.usuario = u;
-        docentesToLink.push(d);
-      }
-    }
-    if (!d) continue;
-
-    const nombreFallback = `${d.apellidos || ''} ${d.nombres || ''}`.trim();
-    const correoFallback = d.correo_electronico || (d.cedula ? `${d.cedula}@example.com` : '');
-
-    let changed = false;
-    if ((!u.nombre || u.nombre.toLowerCase() === 'null null' || u.nombre.trim() === '') && nombreFallback) {
-      u.nombre = nombreFallback;
-      changed = true;
-    }
-    if ((!u.correo || u.correo.trim() === '' || u.correo.includes('@example.com')) && correoFallback) {
-      u.correo = correoFallback;
-      changed = true;
-    }
-    if (changed) updates.push(u);
-  }
-
-  if (docentesToLink.length) {
-    await docenteRepo.save(docentesToLink);
-  }
-  if (updates.length) {
-    await userRepo.save(updates);
-  }
-
   // Filtros y paginación
   const page = Math.max(Number(req.query.page) || 1, 1);
   const limit = Math.min(Number(req.query.limit) || 20, 100);
@@ -98,6 +52,9 @@ usuariosRouter.post('/', async (req, res) => {
   const { nombre, correo, username, password, rol_id, estado } = req.body;
   const rol = await rolRepo.findOneBy({ id: rol_id });
   if (!rol) return res.status(400).json({ message: 'Rol inválido' });
+  if (!password || !isPasswordStrong(password)) {
+    return res.status(400).json({ message: 'La contraseña debe tener mínimo 8 caracteres, con letras y números' });
+  }
   const password_hash = await bcrypt.hash(password, 10);
   try {
     const usuario = repo.create({ nombre, correo, username, password_hash, rol, estado });
@@ -118,7 +75,10 @@ usuariosRouter.put('/:id', async (req, res) => {
     if (!rol) return res.status(400).json({ message: 'Rol inválido' });
     (usuario as any).rol = rol;
   }
-  if (password) usuario.password_hash = await bcrypt.hash(password, 10);
+  if (password) {
+    if (!isPasswordStrong(password)) return res.status(400).json({ message: 'La contraseña debe tener mínimo 8 caracteres, con letras y números' });
+    usuario.password_hash = await bcrypt.hash(password, 10);
+  }
   if (nombre) usuario.nombre = nombre;
   if (correo) usuario.correo = correo;
   if (username) usuario.username = username;

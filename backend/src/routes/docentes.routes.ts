@@ -28,6 +28,8 @@ const TIPOS_VINCULACION = [
 ] as const;
 
 const requiereEstatuto = (vinculacion: string) => vinculacion !== 'administrativo';
+const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+const isPasswordStrong = (pwd: string) => PASSWORD_REGEX.test(pwd);
 
 export const docentesRouter = Router();
 
@@ -114,7 +116,7 @@ docentesRouter.put('/me/credentials', requiereAuth, requiereRol('docente', 'admi
   if (!userId) return res.status(401).json({ message: 'No autenticado' });
   const { username, current_password, new_password } = req.body;
   if (!current_password || !new_password) return res.status(400).json({ message: 'Contraseña actual y nueva son requeridas' });
-  if (new_password.length < 6) return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  if (!isPasswordStrong(new_password)) return res.status(400).json({ message: 'La nueva contraseña debe tener mínimo 8 caracteres, con letras y números' });
 
   const userRepo = AppDataSource.getRepository(Usuario);
   const usuario = await userRepo.findOne({ where: { id: userId } });

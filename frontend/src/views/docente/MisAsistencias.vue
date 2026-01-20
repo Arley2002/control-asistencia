@@ -25,12 +25,13 @@
         <p v-else-if="data.length===0" class="muted">Sin asistencias.</p>
         <table v-else class="table">
           <thead>
-            <tr><th>Reunión</th><th>Fecha asistencia</th><th>Acciones</th></tr>
+            <tr><th>Reunión</th><th>Fecha asistencia</th><th>Convoca</th><th>Acciones</th></tr>
           </thead>
           <tbody>
             <tr v-for="a in data" :key="a.id">
               <td>{{ a.reunion?.nombre }}</td>
-              <td>{{ a.fecha_hora }}</td>
+              <td>{{ formatDate(a.fecha_hora) }}</td>
+              <td>{{ a.reunion?.entidad_convocante }}</td>
               <td>
                 <button class="button" @click="descargarCert(a.reunion?.id)">Descargar PDF</button>
               </td>
@@ -68,6 +69,11 @@ const docenteId = ref(null);
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value || 1)));
 const router = useRouter();
 const auth = useAuthStore();
+
+const formatDate = (value) => {
+  if (!value) return '';
+  return `${value}`.split('T')[0];
+};
 
 const load = async () => {
   loading.value = true;
