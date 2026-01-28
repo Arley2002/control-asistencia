@@ -1,5 +1,6 @@
 <template>
   <div class="layout">
+    <div class="dashboard-bar"></div>
     <aside class="sidebar">
       <p><router-link to="/admin/dashboard">Dashboard</router-link></p>
       <p><router-link to="/admin/reuniones">Reuniones</router-link></p>

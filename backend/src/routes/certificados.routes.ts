@@ -182,7 +182,11 @@ certificadosRouter.get('/docentes/:docenteId/reuniones/:reunionId/pdf', requiere
     );
 
     doc.moveDown(1);
-    doc.text('Para constancia se firma en Popayán.', { align: 'left' });
+    const hoy = new Date();
+    const dia = hoy.getDate();
+    const mes = hoy.toLocaleDateString('es-CO', { month: 'long' });
+    const anio = hoy.getFullYear();
+    doc.text(`Para constancia se firma en Popayán, a los ${dia} días de ${mes} de ${anio}.`, { align: 'left' });
     doc.moveDown(8);
     doc.font('Helvetica-Bold').fontSize(10).text('FERNANDO VARGAS NAVIA', {align: 'left'});
     doc.font('Helvetica-Bold').fontSize(8).text('Presidente de ASOINCA', { align: 'left' });
@@ -216,7 +220,11 @@ certificadosRouter.get('/docentes/:docenteId/reuniones/:reunionId/pdf', requiere
     );
 
     doc.moveDown(2);
-    doc.text('Se expide el presente certificado para los fines pertinentes.', { align: 'left' });
+    const hoy = new Date();
+    const dia = hoy.getDate();
+    const mes = hoy.toLocaleDateString('es-CO', { month: 'long' });
+    const anio = hoy.getFullYear();
+    doc.text(`Para constancia se firma en Popayán, a los ${dia} días de ${mes} de ${anio}.`, { align: 'left' });
     doc.moveDown(6);
     doc.font('Helvetica-Bold').fontSize(10).text('Coordinación PROVITEC', { align: 'center' });
     doc.font('Helvetica').fontSize(9).text('Popayán - Cauca', { align: 'center' });
